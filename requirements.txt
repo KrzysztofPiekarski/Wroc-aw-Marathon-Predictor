@@ -1,0 +1,14 @@
+boto3
+instructor
+joblib
+langfuse
+matplotlib
+openai
+pandas
+pycaret
+pydantic
+python-dotenv
+s3fs
+scikit-learn
+seaborn
+streamlit
