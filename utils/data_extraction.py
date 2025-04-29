@@ -1,11 +1,9 @@
 import instructor
 import openai
 from pydantic import BaseModel, Field
-from config import Config
 
 # Patchowanie klienta OpenAI
-api_key = Config.OPENAI_API_KEY
-client = instructor.patch(openai.Client(api_key=api_key))
+client = instructor.patch(openai.Client())
 
 # Definiowanie modelu danych
 class UserData(BaseModel):
