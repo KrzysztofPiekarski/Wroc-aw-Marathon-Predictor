@@ -11,10 +11,10 @@ class Config:
     AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
     
     # Inne ustawienia, np. OpenAI
-    OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
-    LANGFUSE_PUBLIC_KEY = os.environ["LANGFUSE_PUBLIC_KEY"]
-    LANGFUSE_SECRET_KEY = os.environ["LANGFUSE_SECRET_KEY"]
-    LANGFUSE_HOST = os.environ["LANGFUSE_HOST"]
+    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+    LANGFUSE_PUBLIC_KEY = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
+    LANGFUSE_SECRET_KEY = os.environ.get("LANGFUSE_SECRET_KEY", "")
+    LANGFUSE_HOST = os.environ.get("LANGFUSE_HOST", "")
 
     # Model S3
     BUCKET_NAME = "halfmarathon"
