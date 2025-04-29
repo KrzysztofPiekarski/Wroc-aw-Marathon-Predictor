@@ -5,7 +5,7 @@ load_dotenv()  # Załaduj dane z pliku .env
 
 class Config:
     # DigitalOcean Spaces
-    AWS_REGION = os.environ["AWS_REGION"]
+    AWS_REGION = os.environ.get("AWS_REGION", "eu-central-1")
     AWS_ENDPOINT_URL_S3 = os.environ["AWS_ENDPOINT_URL_S3"]
     AWS_ACCESS_KEY_ID = os.environ["AWS_ACCESS_KEY_ID"]
     AWS_SECRET_ACCESS_KEY = os.environ["AWS_SECRET_ACCESS_KEY"]
