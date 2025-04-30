@@ -1,18 +1,20 @@
+
 import streamlit as st
 import pandas as pd
 import boto3
-import joblib
-import io
+import random
 import os
+import time
 from langfuse import Langfuse
 from langfuse.decorators import observe
 from pycaret.regression import predict_model
+from pydantic import ValidationError
 from config import Config
-from utils.time_utils import format_time_string, convert_time_to_seconds, format_time
+from utils.time_utils import convert_time_to_seconds
 from utils.data_extraction import retrieve_structure
 from utils.prediction import load_model_from_s3, load_model_from_disk
 
-# Konfiguracja klienta AWS S3
+# --- Inicjalizacja ---
 session = boto3.session.Session()
 client = session.client(
     's3',
@@ -22,29 +24,23 @@ client = session.client(
     aws_secret_access_key=Config.AWS_SECRET_ACCESS_KEY
 )
 
-# Inicjalizacja Langfuse
 langfuse = Langfuse(
     public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
     secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-    host=os.getenv("LANGFUSE_HOST")  # Opcjonalnie
+    host=os.getenv("LANGFUSE_HOST")
 )
 
-# Funkcja do przewidywania wyniku
+# --- Funkcje pomocnicze ---
 def predict_halfmarathon_time(model, df):
     try:
         st.write(f"🔍 Typ modelu: {type(model)}")
         st.write(f"🔍 Dane wejściowe: {df.head()}")
-        
-        # Przewidywanie za pomocą PyCaret (zamiast model.predict)
         prediction = predict_model(model, data=df)
-        
-        # Wyciąganie wyniku z kolumny 'Label'
         st.write(f"🔍 Wynik przewidywania: {prediction['Label'][0]}")
-        return prediction['Label'][0]  # Zwróć przewidywaną wartość
+        return prediction['Label'][0]
     except Exception as e:
         raise Exception(f"❗ Błąd podczas przewidywania czasu: {e}")
 
-# Funkcja mapująca wiek na kategorię wiekową
 def map_age_to_category(wiek):
     if 10 <= wiek <= 19:
         return 1
@@ -59,112 +55,143 @@ def map_age_to_category(wiek):
     else:
         raise ValueError("Wiek musi być w zakresie 10-99 lat.")
 
-# Funkcja obserwująca wybór modelu
 @observe
 def log_model_choice(model_choice):
     st.write(f"Model wybrany: {model_choice}")
 
-# Interfejs użytkownika
+# --- UI: Nagłówek ---
 st.markdown("<h1 style='text-align: center; font-family: cursive;'>🏃‍♂️ Kalkulator maratończyka wrocławskiego 🏃‍♀️</h1>", unsafe_allow_html=True)
 st.image("marathon.png", use_container_width=True)
 
-# Wybór źródła modelu
+# --- Wybór modelu ---
 model_choice = st.radio("📦 Skąd załadować model?", ["S3", "Dysk lokalny"])
-
 log_model_choice(model_choice)
 
 model_halfmarathon = None
-
 if model_choice == "S3":
     with st.spinner("🔄 Ładuję model z S3..."):
         try:
-            model_halfmarathon = load_model_from_s3(client, 'halfmarathon20232024', 'marathon_pipeline_regression_model.pkl')
+            model_halfmarathon = load_model_from_s3(client, 'marathon_pipeline_regression_model.pkl', 'marathon_pipeline_regression_model.pkl')
             st.success("✅ Model załadowany z S3!")
         except Exception as e:
-            st.error(f"❌ Wystąpił błąd podczas ładowania modelu: {e}")
-elif model_choice == "Dysk lokalny":
+            st.error(f"❌ Błąd ładowania modelu: {e}")
+else:
     with st.spinner("🔄 Ładuję model z dysku..."):
         try:
-            model_path = "models/marathon_pipeline_regression_model.pkl"
-            model_halfmarathon = load_model_from_disk(model_path)
+            model_halfmarathon = load_model_from_disk("models/marathon_pipeline_regression_model.pkl")
             st.success("✅ Model załadowany z dysku!")
         except Exception as e:
-            st.error(f"❌ Wystąpił błąd podczas ładowania modelu: {e}")
+            st.error(f"❌ Błąd ładowania modelu: {e}")
 
-# Formularz danych użytkownika
+# --- Formularz użytkownika ---
 with st.form("prediction_form"):
     col1, col2 = st.columns(2)
-
     with col1:
         wiek = st.number_input("🎂 Podaj swój wiek:", min_value=10, max_value=99, value=30)
         plec = st.radio("🧑‍🤝‍🧑 Wybierz płeć:", options=["Mężczyzna", "Kobieta"])
-    
     with col2:
         czas_5km = st.text_input("⏱️ Podaj czas na 5 km (format: mm:ss)", "00:00")
         tempo_stabilnosc = st.number_input("📊 Podaj tempo stabilności (domyślnie 0.1)", min_value=0.0, max_value=10.0, value=0.1, step=0.01)
-
     submitted = st.form_submit_button("🔍 Oblicz przewidywany czas")
 
-# Funkcja przygotowująca dane
-def prepare_input_data(wiek, płeć, czas_5km, tempo_stabilność):
-    """Przygotowuje dane wejściowe do predykcji."""
-    if not (10 <= wiek <= 99):
-        raise ValueError("Wiek musi być w zakresie 10-99 lat.")
-    if tempo_stabilnosc < 0 or tempo_stabilnosc > 10:
-        raise ValueError("Stabilność tempa musi być liczbą w zakresie 0-10.")
-    
-    # Formatowanie czasu 5 km
-    czas_5km = format_time_string(czas_5km)
+# --- Textarea i jego obsługa ---
+if "dane_użytkownika" not in st.session_state:
+    st.session_state["dane_użytkownika"] = ""
 
-    # Konwersja czasu na sekundy
-    czas_5km_w_sekundach = convert_time_to_seconds(czas_5km)
-    
-    # Mapowanie wieku na kategorię wiekową
-    kategoria_wiekowa_num = map_age_to_category(wiek)
-    
-    # Mapowanie płci na liczbę
-    plec_num = 0 if plec == "Mężczyzna" else 1
+st.markdown("<div class='custom-label'>Proszę wpisz swoje dane: wiek, płeć oraz ile czasu zajmuje Ci pokonanie dystansu 5 km.</div>", unsafe_allow_html=True)
 
-    # Przygotowanie danych wejściowych w postaci słownika
-    dane_json = {
-        "kategoria_wiekowa_num": kategoria_wiekowa_num,
-        "płeć": płeć,
-        "5_km_tempo_s": czas_5km_w_sekundach,
-        "tempo_stabilność": tempo_stabilność
-    }
+dane_użytkownika = st.text_area("", value=st.session_state["dane_użytkownika"], height=100)
 
-    return dane_json, plec_num
+# --- Sprawdzanie danych ---
+if st.button("Sprawdź dane", key="check_data"):
+    try:
+        # Pobieranie danych
+        dane = retrieve_structure(dane_użytkownika)
+        st.session_state.update({
+            "wiek": dane["Wiek"],
+            "plec": dane["Płeć"],
+            "czas_5km": dane["Czas_5_km"]
+        })
 
-# Funkcja pokazująca wynik
-def show_summary(wiek, plec, czas_5km, tempo_stabilnosc, formatted_time):
-    st.success("✅ Twoje dane:")
-    st.markdown(f"""
-    - 🎂 **Wiek:** {wiek} lat  
-    - 🧑‍🤝‍🧑 **Płeć:** {plec}  
-    - ⏱️ **Czas na 5 km:** {czas_5km}  
-    - 📊 **Stabilność tempa:** {tempo_stabilnosc} 
-    """)
-    st.success(f"🏅 Przewidywany czas ukończenia półmaratonu: **{formatted_time}**.") 
+        # Konwersja danych wejściowych na wymagane przez model
+        dane_json = {
+            "5_km_tempo_s": convert_time_to_seconds(st.session_state["czas_5km"]),
+            "kategoria_wiekowa_num": map_age_to_category(st.session_state["wiek"]),
+            "tempo_stabilność": tempo_stabilnosc,
+            "płeć": st.session_state["plec"]
+        }
 
-if submitted:
-    if model_halfmarathon is None:
-        st.error("❗ Model nie został załadowany. Proszę najpierw wybrać źródło i załadować model.")
-    else:
-        try:
-            # Przygotowanie danych
-            try:
-                dane_json, plec_num = prepare_input_data(wiek, plec, czas_5km, tempo_stabilnosc)
-            except ValueError as ve:
-                st.error(f"⚠️ Błąd danych wejściowych: {ve}")
-                st.stop()  # Zatrzymaj dalsze działanie jeśli dane są złe
+        st.write("Dane wejściowe do modelu:", dane_json)
 
-            # Predykcja
+        brakujace_dane = []
+        if st.session_state["wiek"] is None:
+            brakujace_dane.append("wieku")
+        if st.session_state["plec"] is None:
+            brakujace_dane.append("płci")
+        if st.session_state["czas_5km"] is None:
+            brakujace_dane.append("czasu na 5 km")
+
+        if brakujace_dane:
+            st.error("Brakuje danych dla: " + ", ".join(brakujace_dane))
+        else:
+            st.success("Dane poprawne. Rozpoczynam predykcję...")
+            time.sleep(2)
+
             df_predykcja = pd.DataFrame([dane_json])
-            predicted_time = predict_halfmarathon_time(model_halfmarathon, df_predykcja)
-            formatted_time = format_time(predicted_time)
+            st.write("DataFrame przed predykcją:", df_predykcja)
 
-            # Wyświetlenie wyniku
-            show_summary(wiek, plec, czas_5km, tempo_stabilnosc, formatted_time)
+            try:
+                predicted_time = model_halfmarathon.predict(df_predykcja)[0]
+                h, m, s = int(predicted_time / 3600), int((predicted_time % 3600) / 60), int(predicted_time % 60)
+                predicted_time_format = f"{h:02d}:{m:02d}:{s:02d}"
 
-        except Exception as e:
-            st.error(f"❌ Wystąpił nieoczekiwany błąd: {e}") 
+                kolory = ["#fab387", "#f9e2af", "#89b4fa", "#a6e3a1", "#FFA500", "#a6adc8", "#eba0ac"]
+                kolory = ["#ff6b6b", "#feca57", "#48dbfb", "#1dd1a1", "#5f27cd", "#c8d6e5"]
+                title = "Czas ukończenia półmaratonu:"
+
+                title_container = st.empty()
+                time_container = st.empty()
+
+                # --- ANIMACJA TYTUŁU ---
+                title_html = "<div style='text-align: center; font-size: 24px; font-family: cursive;'>"
+                for litera in title:
+                    kolor = random.choice(kolory)
+                    title_html += f"<span style='color: {kolor};'>{litera}</span>"
+                    title_container.markdown(title_html + "</div>", unsafe_allow_html=True)
+                    time.sleep(0.05)
+
+                time.sleep(0.5)  # Pauza po tytule
+
+                # --- ANIMACJA CZASU ---
+                time_html = "<div style='text-align: center; font-size: 46px; font-weight: bold; font-family: cursive;'>"
+                for znak in predicted_time_format:
+                    kolor = random.choice(kolory)
+                    time_html += f"<span style='color: {kolor};'>{znak}</span>"
+                    time_container.markdown(time_html + "</div>", unsafe_allow_html=True)
+                    time.sleep(0.15)
+
+            except Exception as e:
+                st.error(f"Błąd predykcji: {e}")
+
+            time.sleep(1)
+            if st.button("Wyczyść dane", key="clear_button"):
+                for key in ["dane_użytkownika", "wiek", "plec", "czas_5km"]:
+                    st.session_state[key] = ""
+                st.stop()
+
+    except ValueError as e:
+        st.error(f"Błąd: {e}")
+
+    except ValidationError as e:
+        missing_fields = [error['loc'][0] for error in e.errors()]
+        messages = []
+        if 'Wiek' in missing_fields:
+            messages.append("Brakuje wieku.")
+        if 'Płeć' in missing_fields:
+            messages.append("Brakuje płci.")
+        if 'Czas_5_km' in missing_fields:
+            messages.append("Brakuje czasu na 5 km.")
+        st.error("Błąd: " + " ".join(messages))
+
+    except Exception as e:
+        st.error(f"Nieoczekiwany błąd: {e}")
