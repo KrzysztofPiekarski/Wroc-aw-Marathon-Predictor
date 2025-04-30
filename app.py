@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import boto3
@@ -83,37 +82,64 @@ else:
         except Exception as e:
             st.error(f"❌ Błąd ładowania modelu: {e}")
 
-# --- Formularz użytkownika ---
-with st.form("prediction_form"):
-    col1, col2 = st.columns(2)
-    with col1:
-        wiek = st.number_input("🎂 Podaj swój wiek:", min_value=10, max_value=99, value=30)
-        plec = st.radio("🧑‍🤝‍🧑 Wybierz płeć:", options=["Mężczyzna", "Kobieta"])
-    with col2:
-        czas_5km = st.text_input("⏱️ Podaj czas na 5 km (format: mm:ss)", "00:00")
-        tempo_stabilnosc = st.number_input("📊 Podaj tempo stabilności (domyślnie 0.1)", min_value=0.0, max_value=10.0, value=0.1, step=0.01)
-    submitted = st.form_submit_button("🔍 Oblicz przewidywany czas")
+# --- Wybór sposobu wprowadzania danych ---
+input_method = st.radio("🛠️ Wybierz sposób wprowadzania danych:", ["Formularz", "Textarea"], horizontal=True)
 
-# --- Textarea i jego obsługa ---
+# --- Dane wejściowe ---
+tempo_stabilnosc = 0.1
 if "dane_użytkownika" not in st.session_state:
     st.session_state["dane_użytkownika"] = ""
 
-st.markdown("<div class='custom-label'>Proszę wpisz swoje dane: wiek, płeć oraz ile czasu zajmuje Ci pokonanie dystansu 5 km.</div>", unsafe_allow_html=True)
+if input_method == "Formularz":
+    with st.form("prediction_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            wiek = st.number_input("🎂 Podaj swój wiek:", min_value=10, max_value=99, value=30)
+            plec = st.radio("🧑‍🤝‍🧑 Wybierz płeć:", options=["Mężczyzna", "Kobieta"])
+        with col2:
+            czas_5km = st.text_input("⏱️ Podaj czas na 5 km (format: mm:ss)", "00:00")
+            tempo_stabilnosc = st.number_input("📊 Podaj tempo stabilności (domyślnie 0.1)", min_value=0.0, max_value=10.0, value=0.1, step=0.01)
+        submitted = st.form_submit_button("🔍 Oblicz przewidywany czas")
 
-dane_użytkownika = st.text_area("", value=st.session_state["dane_użytkownika"], height=100)
+        if submitted:
+            st.session_state.update({
+                "wiek": wiek,
+                "plec": plec,
+                "czas_5km": czas_5km
+            })
 
-# --- Sprawdzanie danych ---
-if st.button("Sprawdź dane", key="check_data"):
+else:
+    st.markdown("""
+        <style>
+        .custom-label {
+            font-size: 20px;
+            font-weight: 500;
+            margin-bottom: 10px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<div class='custom-label'>⚠️ Jeśli pierwsze rozwiązanie nie działa poprawnie...</div>", unsafe_allow_html=True)
+    st.markdown("<div class='custom-label'>📝 Wpisz dane: wiek, płeć i czas na 5 km.</div>", unsafe_allow_html=True)
+
+    dane_użytkownika = st.text_area("", value=st.session_state["dane_użytkownika"], height=100)
+
+    if st.button("📥 Sprawdź dane", key="check_data"):
+        try:
+            dane = retrieve_structure(dane_użytkownika)
+            st.session_state.update({
+                "wiek": dane["Wiek"],
+                "plec": dane["Płeć"],
+                "czas_5km": dane["Czas_5_km"]
+            })
+        except (ValueError, ValidationError) as e:
+            st.error(f"Błąd danych tekstowych: {e}")
+        except Exception as e:
+            st.error(f"Nieoczekiwany błąd: {e}")
+
+# --- Predykcja ---
+if all(k in st.session_state for k in ["wiek", "plec", "czas_5km"]) and st.session_state["wiek"] and st.session_state["plec"] and st.session_state["czas_5km"]:
     try:
-        # Pobieranie danych
-        dane = retrieve_structure(dane_użytkownika)
-        st.session_state.update({
-            "wiek": dane["Wiek"],
-            "plec": dane["Płeć"],
-            "czas_5km": dane["Czas_5_km"]
-        })
-
-        # Konwersja danych wejściowych na wymagane przez model
         dane_json = {
             "5_km_tempo_s": convert_time_to_seconds(st.session_state["czas_5km"]),
             "kategoria_wiekowa_num": map_age_to_category(st.session_state["wiek"]),
@@ -121,77 +147,41 @@ if st.button("Sprawdź dane", key="check_data"):
             "płeć": st.session_state["plec"]
         }
 
-        st.write("Dane wejściowe do modelu:", dane_json)
+        df_predykcja = pd.DataFrame([dane_json])
+        st.write("📄 Dane wejściowe do modelu:", dane_json)
 
-        brakujace_dane = []
-        if st.session_state["wiek"] is None:
-            brakujace_dane.append("wieku")
-        if st.session_state["plec"] is None:
-            brakujace_dane.append("płci")
-        if st.session_state["czas_5km"] is None:
-            brakujace_dane.append("czasu na 5 km")
+        predicted_time = model_halfmarathon.predict(df_predykcja)[0]
+        h, m, s = int(predicted_time / 3600), int((predicted_time % 3600) / 60), int(predicted_time % 60)
+        predicted_time_format = f"{h:02d}:{m:02d}:{s:02d}"
 
-        if brakujace_dane:
-            st.error("Brakuje danych dla: " + ", ".join(brakujace_dane))
-        else:
-            st.success("Dane poprawne. Rozpoczynam predykcję...")
-            time.sleep(2)
+        kolory = ["#ff6b6b", "#feca57", "#48dbfb", "#1dd1a1", "#5f27cd", "#c8d6e5"]
+        title = "Czas ukończenia półmaratonu:"
 
-            df_predykcja = pd.DataFrame([dane_json])
-            st.write("DataFrame przed predykcją:", df_predykcja)
+        title_container = st.empty()
+        time_container = st.empty()
 
-            try:
-                predicted_time = model_halfmarathon.predict(df_predykcja)[0]
-                h, m, s = int(predicted_time / 3600), int((predicted_time % 3600) / 60), int(predicted_time % 60)
-                predicted_time_format = f"{h:02d}:{m:02d}:{s:02d}"
+        # --- ANIMACJA TYTUŁU ---
+        title_html = "<div style='text-align: center; font-size: 45px; font-family: cursive;'>"
+        for litera in title:
+            kolor = random.choice(kolory)
+            title_html += f"<span style='color: {kolor};'>{litera}</span>"
+            title_container.markdown(title_html + "</div>", unsafe_allow_html=True)
+            time.sleep(0.05)
 
-                kolory = ["#fab387", "#f9e2af", "#89b4fa", "#a6e3a1", "#FFA500", "#a6adc8", "#eba0ac"]
-                kolory = ["#ff6b6b", "#feca57", "#48dbfb", "#1dd1a1", "#5f27cd", "#c8d6e5"]
-                title = "Czas ukończenia półmaratonu:"
+        time.sleep(0.5)
 
-                title_container = st.empty()
-                time_container = st.empty()
+        # --- ANIMACJA CZASU ---
+        time_html = "<div style='text-align: center; font-size: 66px; font-weight: bold; font-family: cursive;'>"
+        for znak in predicted_time_format:
+            kolor = random.choice(kolory)
+            time_html += f"<span style='color: {kolor};'>{znak}</span>"
+            time_container.markdown(time_html + "</div>", unsafe_allow_html=True)
+            time.sleep(0.15)
 
-                # --- ANIMACJA TYTUŁU ---
-                title_html = "<div style='text-align: center; font-size: 24px; font-family: cursive;'>"
-                for litera in title:
-                    kolor = random.choice(kolory)
-                    title_html += f"<span style='color: {kolor};'>{litera}</span>"
-                    title_container.markdown(title_html + "</div>", unsafe_allow_html=True)
-                    time.sleep(0.05)
-
-                time.sleep(0.5)  # Pauza po tytule
-
-                # --- ANIMACJA CZASU ---
-                time_html = "<div style='text-align: center; font-size: 46px; font-weight: bold; font-family: cursive;'>"
-                for znak in predicted_time_format:
-                    kolor = random.choice(kolory)
-                    time_html += f"<span style='color: {kolor};'>{znak}</span>"
-                    time_container.markdown(time_html + "</div>", unsafe_allow_html=True)
-                    time.sleep(0.15)
-
-            except Exception as e:
-                st.error(f"Błąd predykcji: {e}")
-
-            time.sleep(1)
-            if st.button("Wyczyść dane", key="clear_button"):
-                for key in ["dane_użytkownika", "wiek", "plec", "czas_5km"]:
-                    st.session_state[key] = ""
-                st.stop()
-
-    except ValueError as e:
-        st.error(f"Błąd: {e}")
-
-    except ValidationError as e:
-        missing_fields = [error['loc'][0] for error in e.errors()]
-        messages = []
-        if 'Wiek' in missing_fields:
-            messages.append("Brakuje wieku.")
-        if 'Płeć' in missing_fields:
-            messages.append("Brakuje płci.")
-        if 'Czas_5_km' in missing_fields:
-            messages.append("Brakuje czasu na 5 km.")
-        st.error("Błąd: " + " ".join(messages))
+        if st.button("Wyczyść dane", key="clear_button"):
+            for key in ["dane_użytkownika", "wiek", "plec", "czas_5km"]:
+                st.session_state[key] = ""
+            st.experimental_rerun()
 
     except Exception as e:
-        st.error(f"Nieoczekiwany błąd: {e}")
+        st.error(f"Błąd predykcji: {e}")
