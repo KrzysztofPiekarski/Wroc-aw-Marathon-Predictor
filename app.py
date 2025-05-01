@@ -14,13 +14,14 @@ from utils.data_extraction import retrieve_structure
 from utils.prediction import load_model_from_s3, load_model_from_disk
 
 # --- Inicjalizacja ---
+# Konfiguracja dostępu do DigitalOcean Spaces
 session = boto3.session.Session()
 client = session.client(
     's3',
-    region_name='us-east-1',
-    endpoint_url=Config.AWS_ENDPOINT_URL_S3,
-    aws_access_key_id=Config.AWS_ACCESS_KEY_ID,
-    aws_secret_access_key=Config.AWS_SECRET_ACCESS_KEY
+    region_name=os.getenv('AWS_REGION'),
+    endpoint_url=os.getenv('AWS_ENDPOINT_URL_S3'),
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
 )
 
 langfuse = Langfuse(
@@ -56,7 +57,7 @@ def map_age_to_category(wiek):
 
 @observe
 def log_model_choice(model_choice):
-    st.write(f"Model wybrany: {model_choice}")
+    st.write(f"📌 Model wybrany: {model_choice}")
 
 # --- UI: Nagłówek ---
 st.markdown("<h1 style='text-align: center; font-family: cursive;'>🏃‍♂️ Kalkulator maratończyka wrocławskiego 🏃‍♀️</h1>", unsafe_allow_html=True)
@@ -78,19 +79,19 @@ else:
     with st.spinner("🔄 Ładuję model z dysku..."):
         try:
             model_halfmarathon = load_model_from_disk("models/marathon_pipeline_regression_model.pkl")
-            st.success("✅ Model załadowany z dysku!")
+            st.success("✅  Model załadowany z dysku!")
         except Exception as e:
             st.error(f"❌ Błąd ładowania modelu: {e}")
 
 # --- Wybór sposobu wprowadzania danych ---
-input_method = st.radio("🛠️ Wybierz sposób wprowadzania danych:", ["Formularz", "Textarea"], horizontal=True)
+input_method = st.radio("✍️ Wybierz sposób wprowadzania danych:", ["📝 Formularz", "📄 Textarea"], horizontal=True)
 
 # --- Dane wejściowe ---
 tempo_stabilnosc = 0.1
 if "dane_użytkownika" not in st.session_state:
     st.session_state["dane_użytkownika"] = ""
 
-if input_method == "Formularz":
+if input_method == "📝 Formularz":
     with st.form("prediction_form"):
         col1, col2 = st.columns(2)
         with col1:
@@ -112,14 +113,14 @@ else:
     st.markdown("""
         <style>
         .custom-label {
-            font-size: 20px;
+            font-size: 14px;
             font-weight: 500;
             margin-bottom: 10px;
         }
         </style>
     """, unsafe_allow_html=True)
 
-    st.markdown("<div class='custom-label'>⚠️ Jeśli pierwsze rozwiązanie nie działa poprawnie...</div>", unsafe_allow_html=True)
+    st.markdown("<div class='custom-label'>⚠️ Jeśli pierwsze rozwiązanie nie działa poprawnie 😊</div>", unsafe_allow_html=True)
     st.markdown("<div class='custom-label'>📝 Wpisz dane: wiek, płeć i czas na 5 km.</div>", unsafe_allow_html=True)
 
     dane_użytkownika = st.text_area("", value=st.session_state["dane_użytkownika"], height=100)
@@ -133,9 +134,9 @@ else:
                 "czas_5km": dane["Czas_5_km"]
             })
         except (ValueError, ValidationError) as e:
-            st.error(f"Błąd danych tekstowych: {e}")
+            st.error(f"❌ Błąd danych tekstowych: {e}")
         except Exception as e:
-            st.error(f"Nieoczekiwany błąd: {e}")
+            st.error(f"❌ Nieoczekiwany błąd: {e}")
 
 # --- Predykcja ---
 if all(k in st.session_state for k in ["wiek", "plec", "czas_5km"]) and st.session_state["wiek"] and st.session_state["plec"] and st.session_state["czas_5km"]:
@@ -155,7 +156,7 @@ if all(k in st.session_state for k in ["wiek", "plec", "czas_5km"]) and st.sessi
         predicted_time_format = f"{h:02d}:{m:02d}:{s:02d}"
 
         kolory = ["#ff6b6b", "#feca57", "#48dbfb", "#1dd1a1", "#5f27cd", "#c8d6e5"]
-        title = "Czas ukończenia półmaratonu:"
+        title = "⏱️ Czas ukończenia półmaratonu 🎉:"
 
         title_container = st.empty()
         time_container = st.empty()
@@ -178,10 +179,11 @@ if all(k in st.session_state for k in ["wiek", "plec", "czas_5km"]) and st.sessi
             time_container.markdown(time_html + "</div>", unsafe_allow_html=True)
             time.sleep(0.15)
 
-        if st.button("Wyczyść dane", key="clear_button"):
-            for key in ["dane_użytkownika", "wiek", "plec", "czas_5km"]:
-                st.session_state[key] = ""
-            st.experimental_rerun()
+        if st.button("🧼 Wyczyść dane", key="clear_button"):
+            for key in ["dane_użytkownika", "wiek", "plec", "czas_5km"]: 
+                if key in st.session_state:
+                    st.session_state[key] = ""
+            st.rerun()
 
     except Exception as e:
-        st.error(f"Błąd predykcji: {e}")
+        st.error(f"🚨 Błąd predykcji: {e}")
