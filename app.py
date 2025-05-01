@@ -30,6 +30,9 @@ langfuse = Langfuse(
     host=os.getenv("LANGFUSE_HOST")
 )
 
+#  Patachowanie OpenAi client
+client = get_patched_openai_client()
+
 # --- Funkcje pomocnicze ---
 def predict_halfmarathon_time(model, df):
     try:
