@@ -1,3 +1,4 @@
+
 import instructor
 from openai import OpenAI
 from pydantic import BaseModel, Field
@@ -12,7 +13,9 @@ def get_patched_openai_client():
     oraz zwraca spatchowanego klienta OpenAI przez `instructor.patch()`.
     """
     # Sprawdzenie, czy klucz API OpenAI już istnieje w sesji
-    if "openai_api_key" not in st.session_state:
+    #if "openai_api_key" not in st.session_state:
+    #    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if not st.session_state.get("openai_api_key"):
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if openai_api_key:
             st.session_state["openai_api_key"] = openai_api_key
@@ -20,11 +23,12 @@ def get_patched_openai_client():
             st.info("Podaj swój klucz API OpenAI, aby móc korzystać z tej aplikacji")
             st.session_state["openai_api_key"] = st.text_input("Klucz API", type="password")
             if st.session_state["openai_api_key"]:
-                st.session_state["openai_api_key"] = st.session_state["openai_api_key"]  # Upewniamy się, że zapisujemy klucz
+                # Zapisywanie klucza do sesji i ponowne uruchomienie aplikacji
+                st.session_state["openai_api_key"] = st.session_state["openai_api_key"]
                 st.rerun()
 
     # Jeśli klucz API nadal nie został podany, zatrzymaj aplikację
-    if "openai_api_key" not in st.session_state or not st.session_state["openai_api_key"]:
+    if not st.session_state.get("openai_api_key"):  # Poprawiony sposób użycia .get
         st.stop()
 
     # Tworzenie klienta OpenAI i jego patchowanie
@@ -82,6 +86,6 @@ def retrieve_structure(text):
     
     return dane
 
-# Przykładowe użycie:
-# (Tutaj możesz dodać formularz w Streamlit do wprowadzenia danych przez użytkownika)
 
+# Możesz teraz dodać formularz w Streamlit do wprowadzenia danych przez użytkownika:
+# np. st.text_input("Podaj tekst", key="user_input")
