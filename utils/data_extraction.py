@@ -13,8 +13,6 @@ def get_patched_openai_client():
     oraz zwraca spatchowanego klienta OpenAI przez `instructor.patch()`.
     """
     # Sprawdzenie, czy klucz API OpenAI już istnieje w sesji
-    #if "openai_api_key" not in st.session_state:
-    #    openai_api_key = os.getenv("OPENAI_API_KEY")
     if not st.session_state.get("openai_api_key"):
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if openai_api_key:
