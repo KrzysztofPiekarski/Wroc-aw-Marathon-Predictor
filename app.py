@@ -10,7 +10,7 @@ from pycaret.regression import predict_model
 from pydantic import ValidationError
 from config import Config
 from utils.time_utils import convert_time_to_seconds
-from utils.data_extraction import retrieve_structure
+from utils.data_extraction import retrieve_structure, get_patched_openai_client
 from utils.prediction import load_model_from_s3, load_model_from_disk
 
 # --- Inicjalizacja ---
@@ -60,11 +60,11 @@ def log_model_choice(model_choice):
     st.write(f"📌 Model wybrany: {model_choice}")
 
 # --- UI: Nagłówek ---
-st.markdown("<h1 style='text-align: center; font-family: cursive;'>🏃‍♂️ Kalkulator maratończyka wrocławskiego 🏃‍♀️</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; font-family: cursive;'>Kalkulator maratończyka wrocławskiego</h1>", unsafe_allow_html=True)
 st.image("marathon.png", use_container_width=True)
 
 # --- Wybór modelu ---
-model_choice = st.radio("📦 Skąd załadować model?", ["S3", "Dysk lokalny"])
+model_choice = st.radio("📦 Skąd załadować model?", ["☁️ S3", "💾 Dysk lokalny"])
 log_model_choice(model_choice)
 
 model_halfmarathon = None

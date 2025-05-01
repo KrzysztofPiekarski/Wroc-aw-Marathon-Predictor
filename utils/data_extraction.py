@@ -6,31 +6,45 @@ from langfuse.decorators import observe
 import streamlit as st
 import os
 
+
 # Patchowanie klienta OpenAI
 client = instructor.patch(openai.Client())
 
-# Definiowanie modelu danych
+
+def get_patched_openai_client():
+    """
+    Obsługuje ochronę klucza API OpenAI, jego pobranie z .env lub formularza,
+    oraz zwraca spatchowanego klienta OpenAI przez `instructor.patch()`.
+    """
+    if not st.session_state.get("openai_api_key"):
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if openai_api_key:
+            st.session_state["openai_api_key"] = openai_api_key
+        else:
+            st.info("Podaj swój klucz API OpenAI, aby móc korzystać z tej aplikacji")
+            st.session_state["openai_api_key"] = st.text_input("Klucz API", type="password")
+            if st.session_state["openai_api_key"]:
+                st.rerun()
+
+    if not st.session_state.get("openai_api_key"):
+        st.stop()
+
+    # Tworzenie i patchowanie klienta OpenAI
+    openai_client = OpenAI(api_key=st.session_state["openai_api_key"])
+    patched_client = instructor.patch(openai_client)
+    return patched_client
+
+# Przykładowe użycie:
+client = get_patched_openai_client()
+
+openai_client = OpenAI(api_key=st.session_state['openai_api_key'])
+instructor_openai_client = instructor.from_openai(openai_client)
+
+# Definicja danych użytkownika jako modelu Pydantic
 class UserData(BaseModel):
     Wiek: int | None = Field(default=None, ge=10, le=99)
     Płeć: str | None = Field(default=None)
     Czas_5_km: str = Field(default="00:00:00")
-
-# OpenAI API key protection
-if not st.session_state.get("openai_api_key"):
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    if openai_api_key:
-        st.session_state["openai_api_key"] = openai_api_key
-    else:
-        st.info("Dodaj swój klucz API OpenAI aby móc korzystać z tej aplikacji")
-        st.session_state["openai_api_key"] = st.text_input("Klucz API", type="password")
-        if st.session_state["openai_api_key"]:
-            st.rerun()
-
-if not st.session_state.get("openai_api_key"):
-    st.stop()
-
-openai_client = OpenAI(api_key=st.session_state['openai_api_key'])
-instructor_openai_client = instructor.from_openai(openai_client)
 
 @observe
 def retrieve_structure(text):
