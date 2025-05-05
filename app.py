@@ -144,8 +144,11 @@ else:
 # --- Predykcja ---
 if all(k in st.session_state for k in ["wiek", "plec", "czas_5km"]) and st.session_state["wiek"] and st.session_state["plec"] and st.session_state["czas_5km"]:
     try:
+        # Konwersja czasu na tempo na 1 km
+        tempo_na_km = convert_time_to_seconds(st.session_state["czas_5km"]) / 5
+
         dane_json = {
-            "5_km_tempo_s": convert_time_to_seconds(st.session_state["czas_5km"]),
+            "5_km_tempo_s": tempo_na_km,
             "kategoria_wiekowa_num": map_age_to_category(st.session_state["wiek"]),
             "tempo_stabilność": tempo_stabilnosc,
             "płeć": st.session_state["plec"]
